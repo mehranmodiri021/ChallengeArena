@@ -51,8 +51,15 @@ jobs:
 
       - name: Generate Bazaar BIN
         run: |
-          wget -q https://github.com/Cafebazaar/bundlesigner/releases/download/v0.1.13/bundlesigner-0.1.13.jar \
-            -O bundlesigner.jar
+          echo "Downloading official Cafe Bazaar BundleSigner v0.1.13..."
+          curl -fL --retry 3 --retry-delay 3 \
+            "https://github.com/cafebazaar/bundle-signer/releases/download/v0.1.13/bundlesigner-0.1.13.jar" \
+            -o bundlesigner.jar
+
+          test -s bundlesigner.jar
+          echo "BundleSigner downloaded:"
+          ls -lh bundlesigner.jar
+          java -jar bundlesigner.jar --help
 
           AAB="$(find app/build/outputs/bundle/release -maxdepth 1 -type f -name '*.aab' | head -n 1)"
 
