@@ -1,0 +1,74 @@
+name: Android CI & Release Build
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build APK and AAB
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew || true
+
+      - name: Setup Keystore for Release
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > my-upload-key.jks
+            echo "Official production Keystore decoded successfully."
+          else
+            echo "KEYSTORE_BASE64 secret not found in repository. Generating automated CI upload key for release artifacts..."
+            keytool -genkeypair -v \
+              -keystore my-upload-key.jks \
+              -alias upload \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "ci_upload_pass" \
+              -keypass "ci_upload_pass" \
+              -dname "CN=ChallengeArena, OU=ReleaseCI, O=Studio, L=Tehran, ST=Tehran, C=IR"
+            echo "Automated CI upload key ready."
+          fi
+
+      - name: Build Release APK and Release AAB
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'ci_upload_pass' }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'upload' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'ci_upload_pass' }}
+        run: |
+          echo "Building Release APK and Release AAB..."
+          ./gradlew :app:assembleRelease :app:bundleRelease --stacktrace
+
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: challenge-arena-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: Upload Release AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: challenge-arena-release-aab
+          path: app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error

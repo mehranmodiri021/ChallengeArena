@@ -1,0 +1,7 @@
+{
+  "name": "Challenge Arena",
+  "description": "یک بازی موبایلی آنلاین، رقابتی و چالشی حرفه‌ای با رتبه‌بندی، تورنمنت‌ها، مأموریت‌های روزانه و اشتراک VIP.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
