@@ -15,35 +15,66 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: "17"
           distribution: "temurin"
           cache: gradle
 
+      - name: Prepare release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$GITHUB_WORKSPACE/my-upload-key.jks"
+          test -s "$GITHUB_WORKSPACE/my-upload-key.jks"
+          echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/my-upload-key.jks" >> "$GITHUB_ENV"
+          echo "STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+
       - name: Build Release
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleRelease :app:bundleRelease
+          ./gradlew :app:assembleRelease :app:bundleRelease --stacktrace
 
-      - name: Prepare signing
+      - name: Prepare Bazaar signing files
+        env:
+          SIGNING_KEY_PK8: ${{ secrets.SIGNING_KEY_PK8 }}
+          SIGNING_CERT_PEM: ${{ secrets.SIGNING_CERT_PEM }}
         run: |
-          mkdir signing
-          echo "${{ secrets.SIGNING_KEY_PK8 }}" | base64 -d > signing/key.pk8
-          echo "${{ secrets.SIGNING_CERT_PEM }}" > signing/cert.pem
+          mkdir -p signing
+          echo "$SIGNING_KEY_PK8" | base64 --decode > signing/key.pk8
+          printf '%s\n' "$SIGNING_CERT_PEM" > signing/cert.pem
+          test -s signing/key.pk8
+          test -s signing/cert.pem
 
       - name: Generate Bazaar BIN
         run: |
-          wget -q https://github.com/Cafebazaar/bundlesigner/releases/download/v0.1.13/bundlesigner-0.1.13.jar -O bundlesigner.jar
+          wget -q https://github.com/Cafebazaar/bundlesigner/releases/download/v0.1.13/bundlesigner-0.1.13.jar \
+            -O bundlesigner.jar
+
+          AAB="$(find app/build/outputs/bundle/release -maxdepth 1 -type f -name '*.aab' | head -n 1)"
+
+          if [ -z "$AAB" ]; then
+            echo "ERROR: Release AAB not found"
+            exit 1
+          fi
+
+          echo "Using AAB: $AAB"
+
+          mkdir -p bazaar-bin
 
           java -jar bundlesigner.jar genbin \
-          -v \
-          --v2-signing-enabled true \
-          --v3-signing-enabled false \
-          --bundle app/build/outputs/bundle/release/*.aab \
-          --bin app/build/outputs/bundle/release \
-          --key signing/key.pk8 \
-          --cert signing/cert.pem
+            -v \
+            --v2-signing-enabled true \
+            --v3-signing-enabled false \
+            --bundle "$AAB" \
+            --bin bazaar-bin \
+            --key signing/key.pk8 \
+            --cert signing/cert.pem
+
+          ls -lah bazaar-bin
 
       - name: Upload APK AAB BIN
         uses: actions/upload-artifact@v4
@@ -52,4 +83,4 @@ jobs:
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
-            app/build/outputs/bundle/release/*.bin
+            bazaar-bin/*.bin
