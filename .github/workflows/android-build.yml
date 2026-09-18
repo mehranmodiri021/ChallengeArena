@@ -33,10 +33,14 @@ jobs:
           echo "STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
           echo "KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
-      - name: Build Release
+      - name: Build Release APK
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleRelease :app:bundleRelease --stacktrace
+          ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Build Release AAB
+        run: |
+          ./gradlew :app:bundleRelease --stacktrace
 
       - name: Prepare Bazaar signing files
         env:
@@ -45,42 +49,22 @@ jobs:
         run: |
           mkdir -p signing
           echo "$SIGNING_KEY_PK8" | base64 --decode > signing/key.pk8
-          printf '%s\n' "$SIGNING_CERT_PEM" > signing/cert.pem
+          echo "$SIGNING_CERT_PEM" > signing/cert.pem
           test -s signing/key.pk8
           test -s signing/cert.pem
 
       - name: Generate Bazaar BIN
         run: |
-          echo "Downloading official Cafe Bazaar BundleSigner v0.1.13..."
-          curl -fL --retry 3 --retry-delay 3 \
-            "https://github.com/cafebazaar/bundle-signer/releases/download/v0.1.13/bundlesigner-0.1.13.jar" \
-            -o bundlesigner.jar
-
+          curl -fL --retry 3 --retry-delay 3 "https://github.com/cafebazaar/bundle-signer/releases/download/v0.1.13/bundlesigner-0.1.13.jar" -o bundlesigner.jar
           test -s bundlesigner.jar
-          echo "BundleSigner downloaded:"
-          ls -lh bundlesigner.jar
           java -jar bundlesigner.jar --help
-
-          AAB="$(find app/build/outputs/bundle/release -maxdepth 1 -type f -name '*.aab' | head -n 1)"
-
-          if [ -z "$AAB" ]; then
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          if [ ! -f "$AAB" ]; then
             echo "ERROR: Release AAB not found"
             exit 1
           fi
-
-          echo "Using AAB: $AAB"
-
           mkdir -p bazaar-bin
-
-          java -jar bundlesigner.jar genbin \
-            -v \
-            --v2-signing-enabled true \
-            --v3-signing-enabled false \
-            --bundle "$AAB" \
-            --bin bazaar-bin \
-            --key signing/key.pk8 \
-            --cert signing/cert.pem
-
+          java -jar bundlesigner.jar genbin -v --v2-signing-enabled true --v3-signing-enabled false --bundle "$AAB" --bin bazaar-bin --key signing/key.pk8 --cert signing/cert.pem
           ls -lah bazaar-bin
 
       - name: Upload APK AAB BIN
